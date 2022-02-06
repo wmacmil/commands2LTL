@@ -1,0 +1,112 @@
+{-# LANGUAGE GADTs, FlexibleInstances, KindSignatures, RankNTypes, TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
+
+--{-# LANGUAGE PackageImports #-}
+--{-# OPTIONS_GHC -fglasgow-exts #-}
+
+
+module InstrLTL where
+
+import Data.Maybe
+import Control.Monad
+import Basic
+import LTL
+import qualified PGF (Tree, showExpr)
+import PGF hiding (Tree, showExpr)
+
+instance (Gf (Tree c)) => Show (Tree c) where
+  show = PGF.showExpr [] . gf
+
+x = "go , stop and turn . stop , go and stop and turn . turn and go ." -- and go
+-- x = "go , stop and turn . go ." -- and go
+y = "go , stop and turn ." -- nonexhaustive pattern error
+
+
+-- OneCommand   : Command -> Commands ;
+-- CompoundCommand : [Command] -> Command ;
+-- SimpleCom      : Action   -> Command ;
+
+unList ::  GListCommands -> GListCommands
+unList xs =
+  let ughxs = ugh xs
+  in GListCommands ((GOneCommand (GCompoundCommand ughxs) ) : [])
+
+ugh :: GListCommands -> GListCommand
+ugh (GListCommands xs) = normalizeListCommand $ GListCommand (simple xs)
+
+simple :: [GCommands] -> [GCommand]
+simple ((GOneCommand x):xs) =  x : simple xs
+simple _ = [] -- x ++ simple xs
+
+getList :: GListCommand -> [GCommand]
+getList (GListCommand x) = x
+
+normalizeListCommand :: GListCommand -> GListCommand -- [GCommand]
+-- normalizeListCommand (GListCommand xs) = GListCommand (foldr (++) [] (map helper xs))
+normalizeListCommand (GListCommand xs) = GListCommand (concatMap helper xs)
+  where
+    helper :: GCommand -> [GCommand]
+    helper (GCompoundCommand x') = (getList (normalizeListCommand x'))
+    helper x  = x : [] -- (GSimpleCom x')
+
+-- by having this innocent loop in our parser, it becomes a mess
+-- we want to know if there is a list burried in a list, and if there is, we want to just return the original list
+-- we want to map over it and then concat
+
+-- Dante magic
+-- >>> gr <- readPGF "pgf/Basic.pgf"
+-- >>> cat = startCat gr
+-- >>> eng = head $ languages gr
+-- >>> goToTheWomanT1 = head $ head $ parseAll gr cat y
+-- >>> goToTheWomanAST = fg $ goToTheWomanT1
+-- >>> goToTheWomanAST :: GListCommands
+-- BaseCommands (OneCommand (CompoundCommand (ConsCommand (SimpleCom Go) (BaseCommand (SimpleCom Stop) (SimpleCom Turn)))))
+-- >>> -- goToTheWomanASTRev = reverseCommands goToTheWomanAST :: GListCommands
+-- >>> goToTheWomanASTRev = unList goToTheWomanAST :: GListCommands
+-- >>> goToTheWomanASTRev
+-- BaseCommands (OneCommand (CompoundCommand (ConsCommand (SimpleCom Go) (BaseCommand (SimpleCom Stop) (SimpleCom Turn)))))
+-- >>> goToTheWomanRev = gf goToTheWomanASTRev
+-- >>> linearize gr eng goToTheWomanRev
+-- "go , stop and turn ."
+
+-- x = "go , stop and turn . stop , go and stop and turn . turn and go ." -- and go
+
+-- normalizeListCommand :: GListCommand -> GListCommand -- [GCommand]
+-- normalizeListCommand (GListCommand (x : xs)) =
+--   case x of
+--     q@(GSimpleCom a) -> q
+--     (GCompoundCommand a) -> _ -- (normalizeListCommand a) : _
+--     _ -> _
+
+-- the problem is that we can have nested lists in lists, which from a semantic persepctive we want to rule out
+
+-- i'm just really struggling how to deal with GF lists in pgf at all
+
+
+-- x :: GCommand
+
+
+
+
+
+-- 2 BaseCommand
+--   * CompoundCommand
+--       * ConsCommand
+--           * SimpleCom
+--               * Go
+--             BaseCommand
+--               * SimpleCom
+--                   * Stop
+--                 SimpleCom
+--                   * Turn
+--     SimpleCom
+--       * Go
+
+reverseCommands :: forall a. Tree a -> Tree a
+reverseCommands (GListCommands xs) = GListCommands (reverse xs)
+reverseCommands x = x
+
+-- flattenOuter  :: forall a . Tree a -> GAction --  Tree a
+-- flattenOuter (GListCommands xs) = GGo -- GListCommand (fmap flattenOuter xs)
+-- flattenOuter GGo = GGo
+-- -- flattenOuter x = GGo
